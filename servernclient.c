@@ -1,12 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
@@ -14,72 +11,96 @@
 int main() {
     int server_fd, new_socket;
     struct sockaddr_in address;
-    int opt = 1;
     int addrlen = sizeof(address);
     char buffer[BUFFER_SIZE] = {0};
-    char date_time[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
+    char operation[10];
+    double num1, num2, result;
     
-    // Create socket file descriptor
-    if((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("Socket creation failed");
-        exit(EXIT_FAILURE);
-    }
+    // Create socket
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
     
-    // Set socket options to reuse address
-    if(setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-        perror("Setsockopt failed");
-        exit(EXIT_FAILURE);
-    }
-    
+    // Bind
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
+    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
     
-    // Bind socket to port
-    if(bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("Bind failed");
-        exit(EXIT_FAILURE);
-    }
-    
-    // Start listening for connections
-    if(listen(server_fd, 3) < 0) {
-        perror("Listen failed");
-        exit(EXIT_FAILURE);
-    }
-    
-    printf("Date & Time Server Started...\n");
-    printf("Server listening on port %d\n", PORT);
-    printf("Waiting for client connections...\n\n");
+    // Listen
+    listen(server_fd, 3);
+    printf("Calculator Server Started. Waiting for client...\n");
+    printf("Supported operations: +, -, *, /, %%\n\n");
     
     while(1) {
-        // Accept client connection
-        if((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-            perror("Accept failed");
-            exit(EXIT_FAILURE);
+        // Accept client
+        new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        printf("Client connected!\n");
+        
+        while(1) {
+            memset(buffer, 0, BUFFER_SIZE);
+            
+            // Receive calculation request from client
+            if(read(new_socket, buffer, BUFFER_SIZE) <= 0) {
+                printf("Client disconnected!\n");
+                break;
+            }
+            
+            // Remove newline character
+            buffer[strcspn(buffer, "\n")] = 0;
+            
+            printf("Client request: %s\n", buffer);
+            
+            // Check for exit command
+            if(strcmp(buffer, "exit") == 0) {
+                printf("Exit command received. Disconnecting client...\n");
+                send(new_socket, "Goodbye!", 8, 0);
+                break;
+            }
+            
+            // Parse input: operand1 operator operand2
+            if(sscanf(buffer, "%lf %s %lf", &num1, operation, &num2) == 3) {
+                
+                // Perform calculation based on operator
+                if(strcmp(operation, "+") == 0) {
+                    result = num1 + num2;
+                    sprintf(response, "%.2lf + %.2lf = %.2lf", num1, num2, result);
+                }
+                else if(strcmp(operation, "-") == 0) {
+                    result = num1 - num2;
+                    sprintf(response, "%.2lf - %.2lf = %.2lf", num1, num2, result);
+                }
+                else if(strcmp(operation, "*") == 0) {
+                    result = num1 * num2;
+                    sprintf(response, "%.2lf * %.2lf = %.2lf", num1, num2, result);
+                }
+                else if(strcmp(operation, "/") == 0) {
+                    if(num2 != 0) {
+                        result = num1 / num2;
+                        sprintf(response, "%.2lf / %.2lf = %.2lf", num1, num2, result);
+                    } else {
+                        sprintf(response, "Error: Division by zero!");
+                    }
+                }
+                else if(strcmp(operation, "%") == 0) {
+                    if((int)num2 != 0) {
+                        result = (int)num1 % (int)num2;
+                        sprintf(response, "%.0lf %% %.0lf = %.0lf", num1, num2, result);
+                    } else {
+                        sprintf(response, "Error: Modulo by zero!");
+                    }
+                }
+                else {
+                    sprintf(response, "Error: Invalid operator! Use +, -, *, /, %%");
+                }
+            }
+            else {
+                sprintf(response, "Error: Invalid format! Use: number operator number\nExample: 10 + 5");
+            }
+            
+            send(new_socket, response, strlen(response), 0);
+            printf("Sent result to client\n");
         }
         
-        printf("Client connected from %s:%d\n", 
-               inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-        
-        // Get current date and time
-        time_t current_time;
-        struct tm *time_info;
-        
-        time(&current_time);
-        time_info = localtime(&current_time);
-        
-        // Format date and time
-        strftime(date_time, sizeof(date_time), 
-                 "Current Date and Time: %A, %B %d, %Y\nTime: %I:%M:%S %p", 
-                 time_info);
-        
-        printf("Sending date and time to client...\n");
-        printf("%s\n\n", date_time);
-        
-        // Send date and time to client
-        send(new_socket, date_time, strlen(date_time), 0);
-        
-        // Close client connection
         close(new_socket);
         printf("Client disconnected. Waiting for next connection...\n\n");
     }
@@ -91,11 +112,11 @@ int main() {
 
 
 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -104,49 +125,54 @@ int main() {
 #define BUFFER_SIZE 1024
 
 int main() {
-    int sock = 0;
+    int sock;
     struct sockaddr_in serv_addr;
     char buffer[BUFFER_SIZE] = {0};
+    char request[BUFFER_SIZE];
     
-    // Create socket file descriptor
-    if((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("Socket creation error\n");
-        return -1;
-    }
+    // Create socket
+    sock = socket(AF_INET, SOCK_STREAM, 0);
     
+    // Connect
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
+    inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr);
     
-    // Convert IPv4 address from text to binary form
-    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-        printf("Invalid address/Address not supported\n");
-        return -1;
-    }
-    
-    // Connect to server
     if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("Connection failed\n");
+        printf("Connection failed!\n");
         return -1;
     }
     
-    printf("Connected to Date & Time Server\n");
-    printf("Requesting current date and time...\n\n");
+    printf("Connected to Calculator Server!\n");
+    printf("Format: number operator number\n");
+    printf("Operators: + (add), - (subtract), * (multiply), / (divide), %% (modulo)\n");
+    printf("Type 'exit' to disconnect\n\n");
     
-    // Receive date and time from server
-    int valread = read(sock, buffer, BUFFER_SIZE);
-    
-    if(valread > 0) {
-        printf("Server Response:\n");
-        printf("=================================\n");
-        printf("%s\n", buffer);
-        printf("=================================\n");
-    } else {
-        printf("Failed to receive data from server\n");
+    while(1) {
+        printf("Enter calculation: ");
+        fgets(request, BUFFER_SIZE, stdin);
+        
+        // Remove newline
+        request[strcspn(request, "\n")] = 0;
+        
+        // Send request to server
+        send(sock, request, strlen(request), 0);
+        
+        // Receive response
+        memset(buffer, 0, BUFFER_SIZE);
+        if(read(sock, buffer, BUFFER_SIZE) <= 0) {
+            printf("Server disconnected!\n");
+            break;
+        }
+        
+        printf("Result: %s\n\n", buffer);
+        
+        // If exit command, break
+        if(strcmp(request, "exit") == 0) {
+            break;
+        }
     }
     
-    // Close connection
     close(sock);
-    printf("\nConnection closed. Exiting...\n");
-    
     return 0;
 }
